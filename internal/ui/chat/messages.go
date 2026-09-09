@@ -55,6 +55,16 @@ type MessageItem interface {
 	Identifiable
 }
 
+// TextualItem is a [MessageItem] that exposes its plain text content, used
+// for message search.
+type TextualItem interface {
+	MessageItem
+	// SearchText returns the plain text content of the message.
+	SearchText() string
+	// SearchRole returns the role of the message, e.g. "user" or "assistant".
+	SearchRole() string
+}
+
 // HighlightableMessageItem is a message item that supports highlighting.
 type HighlightableMessageItem interface {
 	MessageItem

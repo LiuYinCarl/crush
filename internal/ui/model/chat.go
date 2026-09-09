@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/crush/internal/ui/anim"
 	"github.com/charmbracelet/crush/internal/ui/chat"
 	"github.com/charmbracelet/crush/internal/ui/common"
+	"github.com/charmbracelet/crush/internal/ui/dialog"
 	"github.com/charmbracelet/crush/internal/ui/list"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
@@ -799,6 +800,73 @@ func (m *Chat) RemoveMessage(id string) {
 
 	// Clean up any paused animations for this message
 	delete(m.pausedAnimations, id)
+}
+
+// SearchableMessages returns searchable entries for the user and assistant
+// text messages currently loaded in the chat, in display order. Each entry
+// carries the message ID and a single-line whitespace-collapsed snippet.
+func (m *Chat) SearchableMessages() []dialog.MessageSearchEntry {
+	var entries []dialog.MessageSearchEntry
+	for i := range m.list.Len() {
+		item, ok := m.list.ItemAt(i).(chat.TextualItem)
+		if !ok {
+			continue
+		}
+		text := strings.Join(strings.Fields(item.SearchText()), " ")
+		if text == "" {
+			continue
+		}
+		entries = append(entries, dialog.MessageSearchEntry{
+			ID:   item.ID(),
+			Role: item.SearchRole(),
+			Text: text,
+		})
+	}
+	return entries
+}
+
+// isUserMessage reports whether the item at the given list index is a user
+// message.
+func (m *Chat) isUserMessage(index int) bool {
+	if index < 0 || index >= m.list.Len() {
+		return false
+	}
+	item, ok := m.list.ItemAt(index).(chat.TextualItem)
+	return ok && item.SearchRole() == "user"
+}
+
+// SelectPrevUserMessage selects the closest user message above the current
+// selection and scrolls it into view.
+func (m *Chat) SelectPrevUserMessage() tea.Cmd {
+	start := m.list.Selected()
+	if start < 0 {
+		start = m.list.Len()
+	}
+	for i := start - 1; i >= 0; i-- {
+		if m.isUserMessage(i) {
+			m.SetSelected(i)
+			return m.ScrollToSelectedAndAnimate()
+		}
+	}
+	return nil
+}
+
+// SelectNextUserMessage selects the closest user message below the current
+// selection and scrolls it into view.
+func (m *Chat) SelectNextUserMessage() tea.Cmd {
+	for i := m.list.Selected() + 1; i < m.list.Len(); i++ {
+		if m.isUserMessage(i) {
+			m.SetSelected(i)
+			return m.ScrollToSelectedAndAnimate()
+		}
+	}
+	return nil
+}
+
+// MessageIndex returns the list index of the message with the given ID.
+func (m *Chat) MessageIndex(id string) (int, bool) {
+	idx, ok := m.idInxMap[id]
+	return idx, ok
 }
 
 // MessageItem returns the message item with the given ID, or nil if not found.
