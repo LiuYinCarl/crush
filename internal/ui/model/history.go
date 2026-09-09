@@ -89,6 +89,32 @@ func (m *UI) handleHistoryDown(msg tea.Msg) tea.Cmd {
 	return m.updateTextarea(msg)
 }
 
+// handleHistoryCycleUp handles alt+up for history cycling. Unlike
+// [UI.handleHistoryUp] it navigates the prompt history unconditionally,
+// regardless of the cursor position in the textarea.
+func (m *UI) handleHistoryCycleUp() tea.Cmd {
+	prevHeight := m.textarea.Height()
+	if m.historyPrev() {
+		// we send this so that the textarea moves the view to the correct position
+		// without this the cursor will show up in the wrong place.
+		return m.updateTextareaWithPrevHeight(nil, prevHeight)
+	}
+	return nil
+}
+
+// handleHistoryCycleDown handles alt+down for history cycling. Unlike
+// [UI.handleHistoryDown] it navigates the prompt history unconditionally,
+// regardless of the cursor position in the textarea.
+func (m *UI) handleHistoryCycleDown() tea.Cmd {
+	prevHeight := m.textarea.Height()
+	if m.historyNext() {
+		// we send this so that the textarea moves the view to the correct position
+		// without this the cursor will show up in the wrong place.
+		return m.updateTextareaWithPrevHeight(nil, prevHeight)
+	}
+	return nil
+}
+
 // handleHistoryEscape handles escape for exiting history navigation.
 func (m *UI) handleHistoryEscape(msg tea.Msg) tea.Cmd {
 	prevHeight := m.textarea.Height()
