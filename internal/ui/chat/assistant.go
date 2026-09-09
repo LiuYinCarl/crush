@@ -273,6 +273,16 @@ func (a *AssistantMessageItem) ID() string {
 	return a.message.ID
 }
 
+// SearchText implements [TextualItem].
+func (a *AssistantMessageItem) SearchText() string {
+	return a.message.Content().Text
+}
+
+// SearchRole implements [TextualItem].
+func (a *AssistantMessageItem) SearchRole() string {
+	return string(a.message.Role)
+}
+
 // RawRender implements [MessageItem].
 func (a *AssistantMessageItem) RawRender(width int) string {
 	cappedWidth := cappedMessageWidth(width)

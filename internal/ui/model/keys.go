@@ -21,6 +21,11 @@ type KeyMap struct {
 		HistoryPrev key.Binding
 		HistoryNext key.Binding
 
+		// HistoryCyclePrev and HistoryCycleNext cycle through the prompt
+		// history regardless of the cursor position in the textarea.
+		HistoryCyclePrev key.Binding
+		HistoryCycleNext key.Binding
+
 		// CopySelection copies the current textarea selection to the
 		// clipboard.
 		CopySelection key.Binding
@@ -66,6 +71,12 @@ type KeyMap struct {
 		ScrollRight    key.Binding
 		FocusSidebar   key.Binding
 		FocusChat      key.Binding
+		SearchMessages key.Binding
+
+		// PrevUserMessage and NextUserMessage jump the selection to the
+		// previous or next user message in the chat.
+		PrevUserMessage key.Binding
+		NextUserMessage key.Binding
 	}
 
 	Initialize struct {
@@ -175,6 +186,14 @@ func DefaultKeyMap() KeyMap {
 	km.Editor.HistoryNext = key.NewBinding(
 		key.WithKeys("down"),
 	)
+	km.Editor.HistoryCyclePrev = key.NewBinding(
+		key.WithKeys("ctrl+left", "alt+up"),
+		key.WithHelp("ctrl+←", "prev input"),
+	)
+	km.Editor.HistoryCycleNext = key.NewBinding(
+		key.WithKeys("ctrl+right", "alt+down"),
+		key.WithHelp("ctrl+→", "next input"),
+	)
 	km.Editor.CopySelection = key.NewBinding(
 		key.WithKeys("ctrl+shift+c"),
 		key.WithHelp("ctrl+shift+c", "copy selection"),
@@ -234,11 +253,11 @@ func DefaultKeyMap() KeyMap {
 		key.WithHelp("↑↓", "scroll"),
 	)
 	km.Chat.UpOneItem = key.NewBinding(
-		key.WithKeys("shift+up", "K"),
+		key.WithKeys("shift+up"),
 		key.WithHelp("shift+↑", "up one item"),
 	)
 	km.Chat.DownOneItem = key.NewBinding(
-		key.WithKeys("shift+down", "J"),
+		key.WithKeys("shift+down"),
 		key.WithHelp("shift+↓", "down one item"),
 	)
 	km.Chat.UpDownOneItem = key.NewBinding(
@@ -299,6 +318,18 @@ func DefaultKeyMap() KeyMap {
 	km.Chat.FocusChat = key.NewBinding(
 		key.WithKeys("h", "left"),
 		key.WithHelp("h/←", "focus chat"),
+	)
+	km.Chat.SearchMessages = key.NewBinding(
+		key.WithKeys("/"),
+		key.WithHelp("/", "search messages"),
+	)
+	km.Chat.PrevUserMessage = key.NewBinding(
+		key.WithKeys("K"),
+		key.WithHelp("K", "prev user message"),
+	)
+	km.Chat.NextUserMessage = key.NewBinding(
+		key.WithKeys("J"),
+		key.WithHelp("J", "next user message"),
 	)
 	km.Initialize.Yes = key.NewBinding(
 		key.WithKeys("y", "Y"),
