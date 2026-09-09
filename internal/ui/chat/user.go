@@ -159,6 +159,16 @@ func (m *UserMessageItem) ID() string {
 	return m.message.ID
 }
 
+// SearchText implements [TextualItem].
+func (m *UserMessageItem) SearchText() string {
+	return m.message.Content().Text
+}
+
+// SearchRole implements [TextualItem].
+func (m *UserMessageItem) SearchRole() string {
+	return string(m.message.Role)
+}
+
 // renderAttachments renders attachments.
 func (m *UserMessageItem) renderAttachments(width int) string {
 	var attachments []message.Attachment

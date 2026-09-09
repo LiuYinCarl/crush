@@ -36,6 +36,12 @@ type ActionSelectSession struct {
 	Session session.Session
 }
 
+// ActionJumpToMessage is a message indicating the user wants to jump to a
+// chat message selected in the message search dialog.
+type ActionJumpToMessage struct {
+	MessageID string
+}
+
 // ActionSelectModel is a message indicating a model has been selected.
 type ActionSelectModel struct {
 	Provider       catwalk.Provider

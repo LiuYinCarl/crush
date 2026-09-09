@@ -2046,6 +2046,21 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		m.dialog.CloseDialog(dialog.SessionsID)
 		cmds = append(cmds, m.loadSession(msg.Session.ID))
 
+	// Search dialog messages.
+	case dialog.ActionJumpToMessage:
+		m.dialog.CloseDialog(dialog.SearchID)
+		if idx, ok := m.chat.MessageIndex(msg.MessageID); ok {
+			m.chat.SetSelected(idx)
+			if cmd := m.chat.ScrollToSelected(); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+			if m.focus != uiFocusMain {
+				m.setState(m.state, uiFocusMain)
+				m.textarea.Blur()
+				m.chat.Focus()
+			}
+		}
+
 	// Open dialog message.
 	case dialog.ActionOpenDialog:
 		m.dialog.CloseDialog(dialog.CommandsID)
@@ -2947,6 +2962,14 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 					))
 					m.textarea.DeleteSelection()
 				}
+			case key.Matches(msg, m.keyMap.Editor.HistoryCyclePrev):
+				if cmd := m.handleHistoryCycleUp(); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+			case key.Matches(msg, m.keyMap.Editor.HistoryCycleNext):
+				if cmd := m.handleHistoryCycleDown(); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
 			case key.Matches(msg, m.keyMap.Editor.HistoryPrev):
 				cmd := m.handleHistoryUp(msg)
 				if cmd != nil {
@@ -3131,6 +3154,18 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 				m.chat.SelectFirst()
 			case key.Matches(msg, m.keyMap.Chat.End):
 				m.chat.ScrollToBottomAndSelectLast()
+			case key.Matches(msg, m.keyMap.Chat.SearchMessages):
+				if cmd := m.openSearchDialog(); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+			case key.Matches(msg, m.keyMap.Chat.PrevUserMessage):
+				if cmd := m.chat.SelectPrevUserMessage(); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+			case key.Matches(msg, m.keyMap.Chat.NextUserMessage):
+				if cmd := m.chat.SelectNextUserMessage(); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
 			default:
 				if ok, cmd := m.chat.HandleKeyMsg(msg); ok {
 					cmds = append(cmds, cmd)
@@ -3503,6 +3538,9 @@ func (m *UI) ShortHelp() []key.Binding {
 				k.Chat.PageUp,
 				k.Chat.PageDown,
 				k.Chat.Copy,
+				k.Chat.SearchMessages,
+				k.Chat.PrevUserMessage,
+				k.Chat.NextUserMessage,
 			)
 			if m.pillsExpanded && hasIncompleteTodos(m.session.Todos) && m.promptQueue > 0 {
 				binds = append(binds, k.Chat.PillLeft)
@@ -3617,6 +3655,8 @@ func (m *UI) FullHelp() [][]key.Binding {
 				k.Editor.SelectAll,
 				k.Editor.CopySelection,
 				k.Editor.CutSelection,
+				k.Editor.HistoryCyclePrev,
+				k.Editor.HistoryCycleNext,
 			}
 			if m.currentModelSupportsImages() {
 				editorBinds = append(editorBinds, k.Editor.AddImage, k.Editor.PasteImage)
@@ -3666,6 +3706,9 @@ func (m *UI) FullHelp() [][]key.Binding {
 				[]key.Binding{
 					k.Chat.Copy,
 					k.Chat.ClearHighlight,
+					k.Chat.SearchMessages,
+					k.Chat.PrevUserMessage,
+					k.Chat.NextUserMessage,
 				},
 			)
 			if m.pillsExpanded && hasIncompleteTodos(m.session.Todos) && m.promptQueue > 0 {
@@ -3693,6 +3736,8 @@ func (m *UI) FullHelp() [][]key.Binding {
 				k.Editor.SelectAll,
 				k.Editor.CopySelection,
 				k.Editor.CutSelection,
+				k.Editor.HistoryCyclePrev,
+				k.Editor.HistoryCycleNext,
 			}
 			if m.currentModelSupportsImages() {
 				editorBinds = append(editorBinds, k.Editor.AddImage, k.Editor.PasteImage)
@@ -5031,6 +5076,24 @@ func (m *UI) openSessionsDialog() tea.Cmd {
 	}
 
 	m.dialog.OpenDialog(dialog)
+	return nil
+}
+
+// openSearchDialog opens the message search dialog with the searchable
+// messages currently loaded in the chat.
+func (m *UI) openSearchDialog() tea.Cmd {
+	if m.dialog.ContainsDialog(dialog.SearchID) {
+		// Bring to front
+		m.dialog.BringToFront(dialog.SearchID)
+		return nil
+	}
+
+	entries := m.chat.SearchableMessages()
+	if len(entries) == 0 {
+		return util.ReportWarn("No messages to search")
+	}
+
+	m.dialog.OpenDialog(dialog.NewSearch(m.com, entries))
 	return nil
 }
 
