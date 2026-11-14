@@ -53,6 +53,13 @@ func (c *coordinator) resolveModelOverride(params AgentDispatchParams, parentMod
 		// A fresh selection: everything else is the model's own default.
 		sel = config.SelectedModel{Provider: provider, Model: model}
 	}
+	allowed := c.subagentModelAllowlist()
+	if !subagentModelAllowed(allowed, sel) {
+		return config.SelectedModel{}, false, fmt.Sprintf(
+			"model %q is not allowed for subagents; options.subagent_models allows: %s",
+			sel.Model, strings.Join(subagentModelNames(allowed), ", "),
+		)
+	}
 	catwalkModel, refusal := c.availableModel(sel)
 	if refusal == "" {
 		refusal = applyReasoning(&sel, catwalkModel, reasoning)
@@ -139,11 +146,24 @@ func modelIDList(models []catwalk.Model) string {
 	return list
 }
 
-// dispatchModelCatalog is appended to the dispatch tool's description; empty when nothing is usable.
+// dispatchModelCatalog is appended to the dispatch tool's description; empty
+// when nothing is usable. When options.subagent_models restricts subagents,
+// the catalog shrinks to what the list allows, so the model is never offered
+// a choice the tool would refuse.
 func dispatchModelCatalog(cfg *config.Config, parent Model) string {
+	var allowed []config.SubagentModel
+	if cfg != nil {
+		allowed = cfg.Options.SubagentModelAllowlist()
+	}
 	var b strings.Builder
 	for _, p := range usableProviders(cfg) {
-		if models := p.UsableModels(); len(models) > 0 {
+		models := p.UsableModels()
+		if len(allowed) > 0 {
+			models = slices.DeleteFunc(slices.Clone(models), func(m catwalk.Model) bool {
+				return !subagentModelAllowed(allowed, config.SelectedModel{Provider: p.ID, Model: m.ID})
+			})
+		}
+		if len(models) > 0 {
 			fmt.Fprintf(&b, "\n- `%s`: %s", p.ID, modelIDList(models))
 		}
 	}
@@ -151,7 +171,10 @@ func dispatchModelCatalog(cfg *config.Config, parent Model) string {
 		return ""
 	}
 	header := "\n\nModels available to `model`, by `provider`"
-	if parent.Model != nil {
+	switch {
+	case len(allowed) > 0:
+		header = "\n\nSubagents are restricted to these models (`options.subagent_models`); `model` must name one of them, and the first is the default"
+	case parent.Model != nil:
 		header += fmt.Sprintf(" (you are running on `%s`)", modelDisplayName(parent))
 	}
 	return header + ":\n" + b.String()

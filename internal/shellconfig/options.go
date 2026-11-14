@@ -34,6 +34,7 @@ import (
 //	option request-timeout 300
 //	option request-timeout 0
 //	option max-background-jobs 200
+//	option subagent-model openai/gpt-5-mini
 //	option pinentry-integrated false
 //	option pinentry-cache-timeout 300
 //
@@ -224,6 +225,7 @@ var optionSpecs = map[string]optionSpec{
 	"global-context-path": {jsonKey: "global_context_paths", kind: optList},
 	"skill-path":          {jsonKey: "skills_paths", kind: optList},
 	"disable-skill":       {jsonKey: "disabled_skills", kind: optList},
+	"subagent-model":      {jsonKey: "subagent_models", kind: optList},
 }
 
 // optionUI implements "option ui <key> <value>" for TUI-specific settings

@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"charm.land/catwalk/v3/pkg/catwalk"
@@ -44,6 +45,7 @@ func (c *coordinator) rebuildModels(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	subLarge = c.restrictSubagentModel(ctx, subLarge)
 	c.models.Set(coordinatorModels{large: large, subLarge: subLarge, small: small})
 
 	// Override models rebuild lazily on their next use.
@@ -130,6 +132,69 @@ func (c *coordinator) mainModels() ModelSet {
 func (c *coordinator) subAgentModels() ModelSet {
 	m := c.models.Get()
 	return ModelSet{Large: m.subLarge, Small: m.small}
+}
+
+// subagentModelAllowlist returns options.subagent_models in parsed form. An
+// empty list means the user did not restrict subagent models.
+func (c *coordinator) subagentModelAllowlist() []config.SubagentModel {
+	cfg := c.cfg.Config()
+	if cfg == nil {
+		return nil
+	}
+	return cfg.Options.SubagentModelAllowlist()
+}
+
+// subagentModelAllowed reports whether sel may run a subagent. An empty
+// allowlist allows every model.
+func subagentModelAllowed(allowed []config.SubagentModel, sel config.SelectedModel) bool {
+	if len(allowed) == 0 {
+		return true
+	}
+	for _, m := range allowed {
+		if m.Provider == sel.Provider && m.Model == sel.Model {
+			return true
+		}
+	}
+	return false
+}
+
+// subagentModelNames lists an allowlist as provider/model pairs, for the
+// dispatch catalog and for refusals that tell the model what it may use.
+func subagentModelNames(allowed []config.SubagentModel) []string {
+	names := make([]string, len(allowed))
+	for i, m := range allowed {
+		names[i] = m.String()
+	}
+	return names
+}
+
+// restrictSubagentModel returns the model subagents default to. When
+// options.subagent_models is set, a session default outside the list is
+// replaced by the first allowed model that builds, so omitting `model`
+// cannot slip a subagent onto a model the user withheld. If nothing in the
+// list builds, the session default stays and overrides are still refused.
+func (c *coordinator) restrictSubagentModel(ctx context.Context, base Model) Model {
+	allowed := c.subagentModelAllowlist()
+	if len(allowed) == 0 || subagentModelAllowed(allowed, base.ModelCfg) {
+		return base
+	}
+	for _, m := range allowed {
+		sel := config.SelectedModel{Provider: m.Provider, Model: m.Model}
+		if _, refusal := c.availableModel(sel); refusal != "" {
+			slog.Warn("Configured subagent model is not available", "model", m.String(), "reason", refusal)
+			continue
+		}
+		model, err := c.buildModelFromSelection(ctx, sel, true)
+		if err != nil {
+			slog.Warn("Failed to build a configured subagent model", "model", m.String(), "error", err)
+			continue
+		}
+		slog.Info("Subagents default to a configured model", "model", m.String())
+		return model
+	}
+	slog.Warn("No configured subagent model is available; keeping the session default",
+		"models", strings.Join(subagentModelNames(allowed), ", "))
+	return base
 }
 
 // smallOnlyModels serves agents that use the small model for everything.

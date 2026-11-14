@@ -1467,6 +1467,11 @@ func (s *ConfigStore) reloadFromDiskLocked(ctx context.Context) error {
 		return fmt.Errorf("invalid hook configuration on reload: %w", err)
 	}
 
+	// Reject malformed subagent model entries on reload too (mirrors Load).
+	if err := cfg.Options.ValidateSubagentModels(); err != nil {
+		return fmt.Errorf("invalid subagent model configuration on reload: %w", err)
+	}
+
 	// Save current state for potential rollback BEFORE configureProviders,
 	// which may write to disk via RemoveConfigField (e.g. removing stale
 	// OAuth providers). Capturing after would snapshot a config that has

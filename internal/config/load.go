@@ -289,6 +289,12 @@ func Load(ctx context.Context, workingDir, dataDir string, debug bool) (*ConfigS
 		return nil, fmt.Errorf("invalid hook configuration: %w", err)
 	}
 
+	// Reject malformed subagent model entries rather than silently dropping
+	// them, which would lock subagents out of every model.
+	if err := cfg.Options.ValidateSubagentModels(); err != nil {
+		return nil, fmt.Errorf("invalid subagent model configuration: %w", err)
+	}
+
 	if !isInsideWorktree() {
 		const depth = 2
 		const items = 100

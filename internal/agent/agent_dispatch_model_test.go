@@ -732,3 +732,144 @@ func mustJSON(t *testing.T, v any) string {
 	require.NoError(t, err)
 	return string(b)
 }
+
+// A configured subagent model list is a hard restriction: explicit overrides
+// outside it are refused, and the session default is replaced when it is
+// outside the list.
+func TestSubagentModelAllowlistRestrictsOverrides(t *testing.T) {
+	t.Parallel()
+	c, _ := newOverrideTestCoordinator(t)
+	ctx := t.Context()
+
+	c.cfg.Config().Options.SubagentModels = []string{"mock/mock-model"}
+	require.NoError(t, c.rebuildModels(ctx))
+	require.Equal(t, "mock-model", c.subAgentModels().Large.ModelCfg.Model,
+		"the subagent default follows the configured list")
+
+	parent := c.mainModels().Large
+
+	_, ok, refusal := c.resolveModelOverride(AgentDispatchParams{Model: "mock-reasoner"}, parent)
+	require.False(t, ok)
+	require.Equal(t,
+		`model "mock-reasoner" is not allowed for subagents; options.subagent_models allows: mock/mock-model`,
+		refusal)
+
+	sel, ok, refusal := c.resolveModelOverride(AgentDispatchParams{Model: "mock-model"}, parent)
+	require.Empty(t, refusal)
+	require.True(t, ok)
+	require.Equal(t, config.SelectedModel{Provider: "mock", Model: "mock-model"}, sel)
+
+	// Omitting the override is not a way around the list: the shared
+	// subagent agent already runs on an allowed model.
+	_, ok, refusal = c.resolveModelOverride(AgentDispatchParams{}, parent)
+	require.False(t, ok)
+	require.Empty(t, refusal)
+}
+
+// An entry that cannot be built is skipped, so a stale first entry does not
+// pin subagents to the session default.
+func TestSubagentModelAllowlistSkipsUnavailableDefault(t *testing.T) {
+	t.Parallel()
+	c, _ := newOverrideTestCoordinator(t)
+
+	c.cfg.Config().Options.SubagentModels = []string{"mock/gone-model", "other/other-model"}
+	require.NoError(t, c.rebuildModels(t.Context()))
+
+	large := c.subAgentModels().Large
+	require.Equal(t, "other-model", large.ModelCfg.Model)
+	require.Equal(t, "other", large.ModelCfg.Provider)
+
+	_, _, refusal := c.resolveModelOverride(AgentDispatchParams{
+		Model:    "gone-model",
+		Provider: "mock",
+	}, Model{})
+	require.Contains(t, refusal, "is not available from provider")
+}
+
+// The catalog the model reads is limited to the configured list, so it is
+// never offered a choice the tool would refuse.
+func TestDispatchModelCatalogHonorsAllowlist(t *testing.T) {
+	t.Parallel()
+	c, _ := newOverrideTestCoordinator(t)
+	cfg := c.cfg.Config()
+
+	cfg.Options.SubagentModels = []string{"mock/mock-model", "other/other-model"}
+	catalog := dispatchModelCatalog(cfg, c.mainModels().Large)
+	require.Equal(t,
+		"\n\nSubagents are restricted to these models (`options.subagent_models`); "+
+			"`model` must name one of them, and the first is the default:\n"+
+			"\n- `mock`: mock-model"+
+			"\n- `other`: other-model",
+		catalog)
+	require.NotContains(t, catalog, "mock-reasoner")
+	require.NotContains(t, catalog, "you are running on")
+}
+
+// sendOnNewModel shares resolveModelOverride, so agent_send cannot move a
+// subagent onto a model the list withholds.
+func TestAgentSendRefusesModelOutsideAllowlist(t *testing.T) {
+	t.Parallel()
+	c, env := newOverrideTestCoordinator(t)
+	ctx := t.Context()
+
+	c.cfg.Config().Options.SubagentModels = []string{"mock/mock-model"}
+	require.NoError(t, c.rebuildModels(ctx))
+
+	agents, err := c.taskAgents(ctx, false)
+	require.NoError(t, err)
+	dispatch, err := c.agentDispatchTool(ctx, config.AgentCoder, agents[accessRead].Model)
+	require.NoError(t, err)
+
+	parent, err := env.sessions.Create(ctx, "parent")
+	require.NoError(t, err)
+	assistant, err := env.messages.Create(ctx, parent.ID, message.CreateMessageParams{
+		Role:  message.Assistant,
+		Parts: []message.ContentPart{message.TextContent{Text: "dispatching"}},
+	})
+	require.NoError(t, err)
+
+	callCtx := context.WithValue(ctx, tools.SessionIDContextKey, parent.ID)
+	callCtx = context.WithValue(callCtx, tools.MessageIDContextKey, assistant.ID)
+	resp, err := dispatch.Run(callCtx, fantasy.ToolCall{
+		ID:    "c1",
+		Name:  AgentDispatchToolName,
+		Input: `{"prompt":"do","label":"allowed","model":"mock-reasoner"}`,
+	})
+	require.NoError(t, err)
+	require.True(t, resp.IsError)
+	require.Contains(t, resp.Content, "is not allowed for subagents")
+
+	resp, err = dispatch.Run(callCtx, fantasy.ToolCall{
+		ID:    "c2",
+		Name:  AgentDispatchToolName,
+		Input: `{"prompt":"do","label":"ok","model":"mock-model"}`,
+	})
+	require.NoError(t, err)
+	require.False(t, resp.IsError, resp.Content)
+	entry, ok := c.dispatched.Get(dispatchKey(parent.ID, respLabel(t, resp)))
+	require.True(t, ok)
+	require.Equal(t, "mock-model", entry.runner().Model().ModelCfg.Model)
+
+	// Once it is idle, moving it to a withheld model is refused too.
+	entry.stop("test done")
+	require.True(t, entry.awaitSettled(10*time.Second))
+
+	send := c.agentSendTool(agents[accessRead].Model)
+	resp, err = send.Run(callCtx, fantasy.ToolCall{
+		ID:    "c3",
+		Name:  AgentSendToolName,
+		Input: `{"label":"` + entry.Label + `","message":"again","model":"mock-reasoner"}`,
+	})
+	require.NoError(t, err)
+	require.True(t, resp.IsError)
+	require.Contains(t, resp.Content, "is not allowed for subagents")
+}
+
+// respLabel returns the label a dispatch result reports.
+func respLabel(t *testing.T, resp fantasy.ToolResponse) string {
+	t.Helper()
+	var meta AgentDispatchResponseMetadata
+	require.NoError(t, json.Unmarshal([]byte(resp.Metadata), &meta))
+	require.NotEmpty(t, meta.Label)
+	return meta.Label
+}

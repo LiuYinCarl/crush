@@ -691,6 +691,17 @@
           "examples": [
             300
           ]
+        },
+        "subagent_models": {
+          "items": {
+            "type": "string",
+            "examples": [
+              "openai/gpt-5-mini",
+              "openrouter/anthropic/claude-haiku-4.5"
+            ]
+          },
+          "type": "array",
+          "description": "Models subagents are allowed to run on, as provider/model pairs. When set, subagents can only use these models and default to the first available one"
         }
       },
       "additionalProperties": false,

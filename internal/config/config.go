@@ -484,6 +484,63 @@ type Options struct {
 	// is modified: the redirect only applies to processes Crush spawns.
 	PinentryIntegrated   *bool `json:"pinentry_integrated,omitempty" jsonschema:"description=Render GPG passphrase prompts as a native Crush dialog instead of an external pinentry program. Works with file-based keys and security keys and never modifies GPG or git configuration.,default=true"`
 	PinentryCacheTimeout *int  `json:"pinentry_cache_timeout,omitempty" jsonschema:"description=Seconds Crush keeps an entered GPG passphrase in memory so repeated signing operations do not re-prompt. 0 (the default) disables it; gpg-agent's own cache applies regardless.,default=0,example=300"`
+
+	// SubagentModels restricts the models subagents may run on. Each entry
+	// is a provider/model pair, where the model part may itself contain
+	// slashes (e.g. openrouter/anthropic/claude-haiku-4.5). When set,
+	// subagent dispatches can only name a model from this list, the model
+	// catalog they are shown is limited to it, and subagents default to
+	// its first available entry. Empty leaves the session's subagent
+	// model in charge.
+	SubagentModels []string `json:"subagent_models,omitempty" jsonschema:"description=Models subagents are allowed to run on\\, as provider/model pairs. When set\\, subagents can only use these models and default to the first available one,example=openai/gpt-5-mini,example=openrouter/anthropic/claude-haiku-4.5"`
+}
+
+// SubagentModel is one model options.subagent_models allows subagents to
+// run on, parsed from the provider/model form the option uses.
+type SubagentModel struct {
+	Provider string
+	Model    string
+}
+
+// String returns the model as provider/model, the form the option uses.
+func (m SubagentModel) String() string {
+	return m.Provider + "/" + m.Model
+}
+
+// SubagentModelAllowlist returns options.subagent_models in parsed form. An
+// empty list means subagents are not restricted. Malformed entries are
+// dropped; Load rejects them first, so they only survive a config built in
+// memory.
+func (o *Options) SubagentModelAllowlist() []SubagentModel {
+	if o == nil || len(o.SubagentModels) == 0 {
+		return nil
+	}
+	allowed := make([]SubagentModel, 0, len(o.SubagentModels))
+	for _, raw := range o.SubagentModels {
+		provider, model, ok := strings.Cut(strings.TrimSpace(raw), "/")
+		provider, model = strings.TrimSpace(provider), strings.TrimSpace(model)
+		if !ok || provider == "" || model == "" {
+			continue
+		}
+		allowed = append(allowed, SubagentModel{Provider: provider, Model: model})
+	}
+	return allowed
+}
+
+// ValidateSubagentModels checks that every options.subagent_models entry is
+// a provider/model pair. Validating at load time keeps a typo from silently
+// narrowing subagents down to no usable model.
+func (o *Options) ValidateSubagentModels() error {
+	if o == nil {
+		return nil
+	}
+	for _, raw := range o.SubagentModels {
+		provider, model, ok := strings.Cut(strings.TrimSpace(raw), "/")
+		if !ok || strings.TrimSpace(provider) == "" || strings.TrimSpace(model) == "" {
+			return fmt.Errorf("options.subagent_models entry %q is not provider/model", raw)
+		}
+	}
+	return nil
 }
 
 // DefaultMaxBackgroundJobs is how many background shell jobs may run at once

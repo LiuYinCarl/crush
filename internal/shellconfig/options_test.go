@@ -274,3 +274,22 @@ func TestOption_RequestTimeoutInvalid(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "expects a number of seconds")
 }
+
+func TestOption_SubagentModelList(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	script := `option subagent-model openai/gpt-5-mini
+option subagent-model openrouter/anthropic/claude-haiku-4.5`
+	path := filepath.Join(dir, "crushrc")
+
+	jsonBytes, err := LoadShellConfig(t.Context(), path, []byte(script))
+	require.NoError(t, err)
+
+	var result map[string]any
+	require.NoError(t, json.Unmarshal(jsonBytes, &result))
+
+	opts := result["options"].(map[string]any)
+	models := opts["subagent_models"].([]any)
+	require.Equal(t, []any{"openai/gpt-5-mini", "openrouter/anthropic/claude-haiku-4.5"}, models)
+}
